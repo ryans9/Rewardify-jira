@@ -1,0 +1,47 @@
+modules:
+  jira:issueContext:
+    - key: jrewardify-boost-context
+      resource: main
+      resolver:
+        function: resolver
+      render: native
+      title: 'Rewardify'
+      description: 'View and manage your boost stats'
+      label: 'Rewardify'
+  trigger:
+    - key: lifecycle-installed
+      function: installed-sync-fn
+      events:
+        - avi:forge:installed:app
+    - key: on-comment-mentioned
+      function: comment-mentioned-fn
+      events:
+        - avi:jira:mentioned:comment
+  function:
+    - key: resolver
+      handler: index.handler
+    - key: installed-sync-fn
+      handler: index.handleInstalled
+    - key: comment-mentioned-fn
+      handler: index.onIssueCommented
+resources:
+  - key: main
+    path: src/frontend/index.jsx
+app:
+  runtime:
+    name: nodejs22.x
+    memoryMB: 256
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/bcb6c273-3535-4267-a562-5512eb674196
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+    - read:jira-user
+    - read:email-address:jira
+    - manage:jira-configuration
+    - storage:app
+  external:
+    fetch:
+      backend:
+        - address: c590ffe35524.ngrok-free.app
