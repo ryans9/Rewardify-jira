@@ -44,4 +44,4 @@ permissions:
   external:
     fetch:
       backend:
-        - address: c590ffe35524.ngrok-free.app
+        - address: staging-be.rewardify.ai

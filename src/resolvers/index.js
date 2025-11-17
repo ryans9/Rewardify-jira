@@ -193,7 +193,7 @@ resolver.define('syncUsersToBackend', async (req) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout for large syncs
 
-    const response = await global.fetch('https://c590ffe35524.ngrok-free.app/integrations/jira/sync-users', {
+    const response = await global.fetch('https://https://staging-be.rewardify.ai/integrations/jira/sync-users', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -242,37 +242,126 @@ resolver.define('syncUsersToBackend', async (req) => {
 });
 
 
+resolver.define('getIssueContext', async (req) => {
+  try {
+    // Get issue key from resolver context
+    const context = req.context;
+    const issueKey = context?.extension?.issue?.key ||
+      context?.platformContext?.issueKey ||
+      context?.issue?.key ||
+      null;
+
+    return {
+      success: true,
+      issueKey: issueKey
+    };
+  } catch (error) {
+    console.error('Error getting issue context:', error);
+    return {
+      success: false,
+      issueKey: null
+    };
+  }
+});
+
+resolver.define('getHumanUsers', async (req) => {
+  try {
+    const { cloudId } = req.payload || {};
+    console.log('🔍 Fetching human users for cloudId:', cloudId);
+
+    // Fetch only human users (accountType === 'atlassian' and active)
+    const users = await fetchAllRealUsersWithEmails(1000); // Limit to 1000 for performance
+
+    // Filter to ensure only human users (double-check)
+    const humanUsers = users.filter(
+      (u) => u.active && u.accountType === "atlassian"
+    );
+
+    console.log(`✔ Found ${humanUsers.length} human users`);
+
+    // Format for Select component
+    const formattedUsers = humanUsers.map((user) => ({
+      label: user.displayName || user.emailAddress || 'Unknown User',
+      value: user.accountId,
+      accountId: user.accountId,
+      displayName: user.displayName,
+      emailAddress: user.emailAddress,
+      avatarUrl: user.avatarUrls?.['48x48'] || null,
+    }));
+
+    return {
+      success: true,
+      users: formattedUsers,
+      count: formattedUsers.length
+    };
+  } catch (error) {
+    console.error('❌ Error fetching human users:', error);
+    return {
+      success: false,
+      error: error.message,
+      users: []
+    };
+  }
+});
+
 resolver.define('giveBoost', async (req) => {
   try {
-    const { recipientAccountId, recipientName, message, cloudId, actor, tempBoosts } = req.payload || {};
+    console.log('📥 Received giveBoost request:', JSON.stringify(req, null, 2));
+    console.log('📥 Request payload:', JSON.stringify(req.payload, null, 2));
+
+    const { cloudId, actorAccountId, receivers, boostAmount, message, issueKey } = req.payload || {};
+
+    console.log('📥 Extracted values:', {
+      cloudId,
+      actorAccountId,
+      receivers,
+      boostAmount,
+      message,
+      issueKey,
+      receiversType: typeof receivers,
+      receiversIsArray: Array.isArray(receivers)
+    });
 
     // Validate required fields
-    if (!cloudId || !actor) {
+    if (!cloudId || !actorAccountId || !receivers || !Array.isArray(receivers) || receivers.length === 0) {
+      console.error('❌ Validation failed:', {
+        hasCloudId: !!cloudId,
+        hasActorAccountId: !!actorAccountId,
+        hasReceivers: !!receivers,
+        receiversIsArray: Array.isArray(receivers),
+        receiversLength: receivers?.length
+      });
       return {
         success: false,
-        error: 'Missing required fields: cloudId and actor must be provided from frontend'
+        error: 'Missing required fields: cloudId, actorAccountId, and receivers array must be provided'
       };
     }
 
-    const boostData = {
-      provider: 'forge',
-      cloudId: cloudId,
-      actor: actor,
-      integrationToken: 'default-token',
-      recipients: [{ accountId: recipientAccountId, displayName: recipientName }],
-      tempBoosts: tempBoosts || 1,
-      message: message || '🚀 Boost sent!',
-      context: { triggerType: 'manual_boost' },
+    // Format payload to match comment boost format
+    const payload = {
+      provider: 'jira',
+      teamId: cloudId,
+      actorAccountId: actorAccountId,
+      receivers: receivers,
+      boostAmount: boostAmount || 1,
+      message: message || '🚀',
+      context: {
+        triggerType: 'manual_boost',
+        issueKey: issueKey || null,
+        commentId: null
+      }
     };
+
+    console.log('📤 Sending boost payload from modal:', payload);
 
     // Add timeout to prevent hanging
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
-    const resp = await global.fetch('https://c590ffe35524.ngrok-free.app/integrations/jira/boosts', {
+    const resp = await global.fetch('https://https://staging-be.rewardify.ai/integrations/jira/boosts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Integration-Token': 'default-token' },
-      body: JSON.stringify(boostData),
+      body: JSON.stringify(payload),
       signal: controller.signal
     });
 
@@ -280,14 +369,17 @@ resolver.define('giveBoost', async (req) => {
 
     if (!resp.ok) {
       const txt = await resp.text();
+      console.error('❌ Backend boost error:', resp.status, txt);
       return { success: false, error: `Backend error: ${resp.status} - ${txt}` };
     }
     const data = await resp.json();
-    return { success: true, message: `Boost sent to ${recipientName}!`, data };
+    console.log('✅ Boost sent successfully:', data);
+    return { success: true, message: `Boost sent successfully!`, data };
   } catch (error) {
     if (error.name === 'AbortError') {
       return { success: false, error: 'Request timed out - backend may be slow or unavailable' };
     }
+    console.error('❌ Error sending boost:', error);
     return { success: false, error: error.message };
   }
 });

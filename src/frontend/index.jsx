@@ -16,7 +16,6 @@ import ForgeReconciler, {
   ModalHeader,
   ModalTitle,
   ModalFooter,
-  UserPicker,
   Select,
   Strong,
   xcss,
@@ -64,11 +63,15 @@ const App = () => {
   const [selectedRecipient, setSelectedRecipient] = useState(null);
   const [selectedBoostAmount, setSelectedBoostAmount] = useState(null);
   const [cloudId, setCloudId] = useState(null);
+  const [humanUsers, setHumanUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [issueKey, setIssueKey] = useState(null);
 
-  // Get cloudId on component mount (needed for UserPicker)
+  // Get cloudId and issue key on component mount
   useEffect(() => {
-    const getCloudId = async () => {
+    const getCloudIdAndIssueKey = async () => {
       try {
+        // Get cloudId from user info
         const meResp = await requestJira('/rest/api/3/myself', {
           headers: { Accept: 'application/json' },
         });
@@ -81,11 +84,22 @@ const App = () => {
             }
           }
         }
+
+        // Get issue key from resolver context
+        try {
+          const contextResult = await invoke('getIssueContext', {});
+          if (contextResult?.success && contextResult?.issueKey) {
+            setIssueKey(contextResult.issueKey);
+            console.log('✅ Got issue key:', contextResult.issueKey);
+          }
+        } catch (e) {
+          console.log('Could not get issue key from context:', e);
+        }
       } catch (e) {
         console.error('Error getting cloudId:', e);
       }
     };
-    getCloudId();
+    getCloudIdAndIssueKey();
   }, []);
   useEffect(() => {
     invoke('getText', { example: 'my-invoke-variable' }).then(setData);
@@ -104,9 +118,20 @@ const App = () => {
       return;
     }
 
+    if (
+      !selectedRecipient ||
+      (!selectedRecipient.accountId && !selectedRecipient.value)
+    ) {
+      setMessage('Please select a valid recipient');
+      return;
+    }
+
     try {
       setGivingBoost(true);
       setMessage('');
+
+      // Note: No need to validate here since we only show human users in the Select dropdown
+      // Backend will also validate as a safety measure
 
       // Get current user for the boost
       const meResp = await requestJira('/rest/api/3/myself', {
@@ -117,16 +142,34 @@ const App = () => {
       }
       const me = await meResp.json();
 
+      if (!me.accountId) {
+        throw new Error('Failed to get current user account ID');
+      }
+
       const boostCount = parseInt(selectedBoostAmount);
+
+      // Ensure we have the accountId from selectedRecipient
+      const recipientAccountId =
+        selectedRecipient.accountId || selectedRecipient.value;
+
+      console.log('📤 Sending boost with data:', {
+        cloudId,
+        actorAccountId: me.accountId,
+        receivers: [recipientAccountId],
+        boostAmount: boostCount,
+        selectedRecipient,
+        issueKey,
+      });
+
       const res = await invoke('giveBoost', {
-        recipientAccountId: selectedRecipient.accountId,
-        recipientName: selectedRecipient.displayName || selectedRecipient.name,
+        cloudId: cloudId,
+        actorAccountId: me.accountId,
+        receivers: [recipientAccountId],
+        boostAmount: boostCount,
         message: `🚀 You earned ${boostCount} boost${
           boostCount > 1 ? 's' : ''
         }!`,
-        cloudId: cloudId,
-        actor: me.accountId,
-        tempBoosts: boostCount,
+        issueKey: issueKey,
       });
 
       if (res.success) {
@@ -150,8 +193,31 @@ const App = () => {
   const handleOpenModal = async () => {
     setIsModalOpen(true);
     setMessage('');
-    // const res = await invoke('getUserEmail', { example: 'my-invoke-variable' });
-    // console.log('User email response:', res);
+    setSelectedRecipient(null);
+    setSelectedBoostAmount(null);
+
+    // Load filtered human users when modal opens
+    if (cloudId) {
+      setLoadingUsers(true);
+      try {
+        const result = await invoke('getHumanUsers', { cloudId });
+        if (result?.success && result?.users) {
+          setHumanUsers(result.users);
+          console.log(`✅ Loaded ${result.users.length} human users`);
+        } else {
+          setMessage(
+            `⚠️ Could not load users: ${result?.error || 'Unknown error'}`
+          );
+          setHumanUsers([]);
+        }
+      } catch (error) {
+        console.error('Error loading human users:', error);
+        setMessage(`❌ Error loading users: ${error.message}`);
+        setHumanUsers([]);
+      } finally {
+        setLoadingUsers(false);
+      }
+    }
   };
 
   const handleCloseModal = () => {
@@ -294,21 +360,55 @@ const App = () => {
                   <Strong>Recipient</Strong>
                 </Text>
                 <Box marginTop='space.200'>
-                  {cloudId ? (
-                    <UserPicker
-                      cloudId={cloudId}
-                      onChange={(users) => {
-                        if (users && users.length > 0) {
-                          setSelectedRecipient(users[0]);
+                  {loadingUsers ? (
+                    <Stack space='space.200' alignBlock='center'>
+                      <Spinner size='medium' />
+                      <Text size='small' color='color.text.subtle'>
+                        Loading users...
+                      </Text>
+                    </Stack>
+                  ) : humanUsers.length > 0 ? (
+                    <Select
+                      placeholder='Select co-worker'
+                      options={humanUsers.map((user) => ({
+                        label: user.displayName || user.label,
+                        value: user.accountId,
+                        accountId: user.accountId,
+                        displayName: user.displayName,
+                      }))}
+                      onChange={(option) => {
+                        if (option) {
+                          setSelectedRecipient({
+                            accountId: option.accountId || option.value,
+                            displayName: option.displayName || option.label,
+                            name: option.displayName || option.label,
+                          });
+                          setMessage(''); // Clear any previous error messages
                         } else {
                           setSelectedRecipient(null);
                         }
                       }}
-                      value={selectedRecipient ? [selectedRecipient] : []}
-                      placeholder='Select co-workers'
+                      value={
+                        selectedRecipient
+                          ? {
+                              label:
+                                selectedRecipient.displayName ||
+                                selectedRecipient.name,
+                              value: selectedRecipient.accountId,
+                              accountId: selectedRecipient.accountId,
+                              displayName:
+                                selectedRecipient.displayName ||
+                                selectedRecipient.name,
+                            }
+                          : null
+                      }
                     />
+                  ) : cloudId ? (
+                    <Text color='color.text.subtle'>
+                      No human users found. Please try again.
+                    </Text>
                   ) : (
-                    <Text>Loading user picker...</Text>
+                    <Text>Loading...</Text>
                   )}
                 </Box>
               </Box>
