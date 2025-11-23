@@ -32,7 +32,7 @@ async function storeUsers(context) {
 
 export async function handleInstalled(event, context) {
     console.log('✅ handleInstalled -> syncing users', { cloudId: context?.cloudId }, event);
-    const response = await global.fetch('https://https://staging-be.rewardify.ai/integrations/jira/installation', {
+    const response = await global.fetch('https://staging-be.rewardify.ai/integrations/jira/installation', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

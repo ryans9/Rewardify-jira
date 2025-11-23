@@ -115,7 +115,7 @@ async function processBoostFromComment({ issueKey, commentId, commentText, autho
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
         try {
-            const response = await global.fetch('https://https://staging-be.rewardify.ai/integrations/jira/boosts', {
+            const response = await global.fetch('https://staging-be.rewardify.ai/integrations/jira/boosts', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

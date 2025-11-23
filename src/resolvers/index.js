@@ -193,7 +193,7 @@ resolver.define('syncUsersToBackend', async (req) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout for large syncs
 
-    const response = await global.fetch('https://https://staging-be.rewardify.ai/integrations/jira/sync-users', {
+    const response = await global.fetch('https://staging-be.rewardify.ai/integrations/jira/sync-users', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -358,7 +358,7 @@ resolver.define('giveBoost', async (req) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
-    const resp = await global.fetch('https://https://staging-be.rewardify.ai/integrations/jira/boosts', {
+    const resp = await global.fetch('https://staging-be.rewardify.ai/integrations/jira/boosts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Integration-Token': 'default-token' },
       body: JSON.stringify(payload),
